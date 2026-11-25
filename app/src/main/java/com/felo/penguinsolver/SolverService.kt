@@ -158,7 +158,14 @@ class SolverService : AccessibilityService() {
                 hb.close()
                 if (bmp != null) {
                     screenW = bmp.width; screenH = bmp.height
-                    latestPlan = HoleBot.plan(bmp)
+                    val btn = button
+                    latestPlan = if (btn != null && btn.width > 0 && btn.height > 0) {
+                        val loc = IntArray(2)
+                        btn.getLocationOnScreen(loc)
+                        HoleBot.plan(bmp, loc[0], loc[1], loc[0] + btn.width, loc[1] + btn.height)
+                    } else {
+                        HoleBot.plan(bmp)
+                    }
                 }
                 shotPending = false
             }

@@ -12,7 +12,7 @@ object HoleBot {
         val cells = ArrayList<Int>()
     }
 
-    fun plan(bmp: Bitmap): Plan {
+    fun plan(bmp: Bitmap, ignoreLeft: Int = 0, ignoreTop: Int = 0, ignoreRight: Int = 0, ignoreBottom: Int = 0): Plan {
         val w = bmp.width
         val h = bmp.height
         val step = (w / 90).coerceAtLeast(6)
@@ -26,22 +26,27 @@ object HoleBot {
         val code = IntArray(gw * gh)
         val kind = IntArray(gw * gh)   // 0 unknown, 1 lipstick/polish family, 2 heart, 3 shoe
         for (gy in gy0 until gy1) for (gx in 0 until gx1) {
-            val p = bmp.getPixel(gx * step + step / 2, gy * step + step / 2)
+            val px = gx * step + step / 2
+            val py = gy * step + step / 2
+            if (ignoreRight > ignoreLeft && px in ignoreLeft..ignoreRight && py in ignoreTop..ignoreBottom) continue
+            val p = bmp.getPixel(px, py)
             val r = (p shr 16) and 255; val g = (p shr 8) and 255; val b = p and 255
             val mx = maxOf(r, g, b); val mn = minOf(r, g, b)
             kind[gy * gw + gx] = when {
                 r > 170 && g < 90 && b in 60..149 -> 2
                 r > 200 && g in 80..170 && b > 110 -> 1
-                r > 180 && g > 170 && b < 120 -> 1
+                r > 180 && g > 165 && b < 120 -> 1
                 r < 100 && g < 110 && b < 160 && b > r + 25 -> 1
-                r < 150 && g > 175 && b > 200 -> 3
+                r < 150 && g > 165 && b > 200 -> 3
                 else -> 0
             }
+            val isBrownDirtOrCliff = r > g && g >= b && (r - g) > 15 && (g - b) < 65 && r < 220
             code[gy * gw + gx] = when {
                 r >= 235 && g >= 235 && b >= 235 -> 3
                 r < 70 && g < 70 && b < 80 && (b - r) < 35 -> 2
                 g > r + 40 && g > b + 60 -> 0                        // grass + hole shadow
-                b > 170 && b >= g && b > r + 40 -> 4                 // water / shoes
+                b > 160 && b >= g && b > r + 35 -> 4                 // water / shoes
+                isBrownDirtOrCliff -> 0                              // cliff edge / dirt border
                 (mx - mn) < 90 && r >= g && g >= b && r > 120 -> 0   // sand / ground
                 else -> 1
             }
@@ -77,10 +82,18 @@ object HoleBot {
         fun cy(i: Int) = (i / gw) * step + step / 2f
         val bigArea = 0.04 * w * h
 
-        // big blue blobs = water (ignored); small ones = shoes (items)
+        // big blue blobs = water (tracked in waterMask and ignored); small light-blue ones = shoes (items)
+        val waterMask = BooleanArray(gw * gh)
         for (c in comps { it == 4 }) {
-            val v = if (c.count * step.toDouble() * step > bigArea) 0 else 1
-            for (i in c.cells) { code[i] = v; if (v == 1) kind[i] = 3 }
+            val isWater = c.count * step.toDouble() * step > bigArea
+            if (isWater) {
+                for (i in c.cells) { code[i] = 0; waterMask[i] = true }
+            } else {
+                var shoePixels = 0
+                for (i in c.cells) if (kind[i] == 3) shoePixels++
+                val v = if (shoePixels > 0) 1 else 0
+                for (i in c.cells) { code[i] = v; if (v == 1) kind[i] = 3 }
+            }
         }
 
         // The hole sits at a fixed spot on screen (the map scrolls under it); only its size is measured.
@@ -96,8 +109,10 @@ object HoleBot {
         // big white blobs (tutorial bubbles etc.) are blanked out
         for (wb in comps { it == 3 }.filter { it.count * step.toDouble() * step > 0.01 * w * h }) {
             for (gy in (wb.minY - 3).coerceAtLeast(gy0)..(wb.maxY + 3).coerceAtMost(gy1 - 1))
-                for (gx in (wb.minX - 3).coerceAtLeast(0)..(wb.maxX + 3).coerceAtMost(gx1 - 1))
+                for (gx in (wb.minX - 3).coerceAtLeast(0)..(wb.maxX + 3).coerceAtMost(gx1 - 1)) {
                     code[gy * gw + gx] = 0
+                    kind[gy * gw + gx] = 0
+                }
         }
 
         // only chase item types that are still listed in the top bar (goal counters)
@@ -124,28 +139,87 @@ object HoleBot {
             if (cS >= 100) needS = true
         }
         if (!needA && !needH && !needS) { needA = true; needH = true; needS = true }
-        for (i in 0 until gw * gh) {
-            if (code[i] == 1 && ((kind[i] == 1 && !needA) || (kind[i] == 2 && !needH) || (kind[i] == 3 && !needS))) code[i] = 0
-        }
 
-        // nearest item cell outside the hole's own rim
+        // Keep only item components that contain at least one needed item-family pixel (never chase unknown kind=0 blobs like cliff edges)
+        val itemComps = comps { it == 1 }
+        val validCells = ArrayList<Int>()
+        var n = 0
         val minD = hr * 1.7f + step
-        var bestD = Float.MAX_VALUE; var bx = 0f; var by = 0f; var n = 0
-        for (c in comps { it == 1 }) {
+        var bestD = Float.MAX_VALUE; var bx = 0f; var by = 0f
+        for (c in itemComps) {
             if (c.count < 2) continue
+            var hasNeededKind = false
+            for (i in c.cells) {
+                val k = kind[i]
+                if ((k == 1 && needA) || (k == 2 && needH) || (k == 3 && needS)) {
+                    hasNeededKind = true
+                    break
+                }
+            }
+            if (!hasNeededKind) continue
+
             var seenOne = false
             for (i in c.cells) {
-                val d = Math.hypot((cx(i) - hx).toDouble(), (cy(i) - hy).toDouble()).toFloat()
+                val ix = i % gw; val iy = i / gw
+                // Skip pixels right on top of water border
+                var nearWater = false
+                for (wy in (iy - 1).coerceAtLeast(gy0)..(iy + 1).coerceAtMost(gy1 - 1)) {
+                    for (wx in (ix - 1).coerceAtLeast(0)..(ix + 1).coerceAtMost(gx1 - 1)) {
+                        if (waterMask[wy * gw + wx]) { nearWater = true; break }
+                    }
+                    if (nearWater) break
+                }
+                if (nearWater) continue
+
+                val px = cx(i); val py = cy(i)
+                val d = Math.hypot((px - hx).toDouble(), (py - hy).toDouble()).toFloat()
                 if (d < minD) continue
-                val ddx = Math.abs(cx(i) - hx); val ddy = cy(i) - hy
+                val ddx = Math.abs(px - hx); val ddy = py - hy
                 if (ddx < 0.10f * w && ddy > -0.26f * w && ddy < -0.11f * w) continue   // "Lv.N" label
-                if (ddx < 0.15f * w && ddy > 0.13f * w && ddy < 0.23f * w) continue     // "POWER" label
+                if (ddx < 0.17f * w && ddy > 0.12f * w && ddy < 0.27f * w) continue     // "POWER" label
                 seenOne = true
-                if (d < bestD) { bestD = d; bx = cx(i); by = cy(i) }
+                validCells.add(i)
+                if (d < bestD) { bestD = d; bx = px; by = py }
             }
             if (seenOne) n++
         }
-        if (bestD == Float.MAX_VALUE) return Plan(0f, -1f, 0, hx, hy)   // nothing seen: keep moving forward (up)
-        return Plan((bx - hx) / bestD, (by - hy) / bestD, n, hx, hy)
+
+        // Compute steering direction and avoid pushing straight into water
+        var dx: Float
+        var dy: Float
+        if (bestD == Float.MAX_VALUE) {
+            dx = 0f; dy = -1f
+        } else {
+            dx = (bx - hx) / bestD
+            dy = (by - hy) / bestD
+        }
+
+        fun hitsWater(vx: Float, vy: Float): Boolean {
+            var waterHits = 0
+            for (m in 1..3) {
+                val sx = ((hx + vx * hr * (1.1f + 0.45f * m)) / step).toInt().coerceIn(0, gx1 - 1)
+                val sy = ((hy + vy * hr * (1.1f + 0.45f * m)) / step).toInt().coerceIn(gy0, gy1 - 1)
+                if (waterMask[sy * gw + sx]) waterHits++
+            }
+            return waterHits >= 2
+        }
+
+        if (hitsWater(dx, dy)) {
+            // Try 8 candidate directions and pick the dry one best aligned with (dx, dy)
+            var bestScore = -Float.MAX_VALUE
+            var sdx = dx; var sdy = dy
+            for (a in 0 until 8) {
+                val ang = a * Math.PI / 4.0
+                val cxv = Math.cos(ang).toFloat()
+                val cyv = Math.sin(ang).toFloat()
+                if (!hitsWater(cxv, cyv)) {
+                    val score = cxv * dx + cyv * dy
+                    if (score > bestScore) { bestScore = score; sdx = cxv; sdy = cyv }
+                }
+            }
+            dx = sdx; dy = sdy
+        }
+
+        return Plan(dx, dy, n, hx, hy)
     }
 }

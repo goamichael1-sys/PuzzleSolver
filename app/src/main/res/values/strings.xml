@@ -1,0 +1,3 @@
+<resources>
+    <string name="service_desc">Reads the puzzle board from a screenshot, solves it, and taps the cells for you.</string>
+</resources>

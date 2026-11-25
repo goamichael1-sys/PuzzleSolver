@@ -47,7 +47,16 @@ class SolverService : AccessibilityService() {
         else if (!on) removeButton()
     }
 
+    private var botRunning = false
+
+    private fun mode() = if (BuildConfig.HOLE) 1 else 0
+
+    private fun refreshLabel() {
+        button?.text = if (mode() == 1) (if (botRunning) "STOP BOT" else "START BOT") else "SOLVE"
+    }
+
     private fun removeButton() {
+        stopBot()
         button?.let { try { wm.removeView(it) } catch (_: Exception) {} }
         button = null
     }
@@ -92,13 +101,102 @@ class SolverService : AccessibilityService() {
                     if (System.currentTimeMillis() - downAt > 800) {
                         prefs.edit().putBoolean("bubble", false).apply()
                         toast("Solve bubble hidden")
-                    } else solveNow()
+                    } else onBubbleTap()
                 }
             }
             true
         }
         wm.addView(tv, lp)
         button = tv
+        refreshLabel()
+    }
+
+    private fun onBubbleTap() {
+        if (mode() == 1) {
+            if (botRunning) stopBot() else startBot()
+            refreshLabel()
+        } else solveNow()
+    }
+
+    // ---- hole bot: one continuous touch on the joystick, re-aimed every ~350 ms ----
+    @Volatile private var latestPlan: HoleBot.Plan? = null
+    private var shotPending = false
+    private var lastStroke: GestureDescription.StrokeDescription? = null
+    private var lastX = 0f
+    private var lastY = 0f
+    private var screenW = 0
+    private var screenH = 0
+
+    private fun startBot() {
+        botRunning = true
+        lastStroke = null
+        latestPlan = null
+        val dm = resources.displayMetrics
+        screenW = dm.widthPixels; screenH = dm.heightPixels
+        requestShot()
+        nextSegment()
+    }
+
+    private fun stopBot() {
+        botRunning = false
+        val s = lastStroke ?: return
+        lastStroke = null
+        // lift the finger
+        val p = Path().apply { moveTo(lastX, lastY); lineTo(lastX, lastY) }
+        try {
+            dispatchGesture(GestureDescription.Builder().addStroke(s.continueStroke(p, 0, 30, false)).build(), null, null)
+        } catch (_: Exception) {}
+    }
+
+    private fun requestShot() {
+        if (shotPending || !botRunning) return
+        shotPending = true
+        takeScreenshot(Display.DEFAULT_DISPLAY, exec, object : TakeScreenshotCallback {
+            override fun onSuccess(result: ScreenshotResult) {
+                val hb = result.hardwareBuffer
+                val bmp = Bitmap.wrapHardwareBuffer(hb, result.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                hb.close()
+                if (bmp != null) {
+                    screenW = bmp.width; screenH = bmp.height
+                    latestPlan = HoleBot.plan(bmp)
+                }
+                shotPending = false
+            }
+            override fun onFailure(errorCode: Int) { shotPending = false }
+        })
+    }
+
+    private fun nextSegment() {
+        if (!botRunning) return
+        val plan = latestPlan
+        val dx = plan?.dx ?: 0f
+        val dy = plan?.dy ?: -1f
+        val jx = screenW * 0.5f
+        val jy = screenH * prefs.getInt("joyY", 72) / 100f
+        val rad = screenW * 0.12f
+        val tx = jx + dx * rad
+        val ty = jy + dy * rad
+        val first = lastStroke == null
+        val path = Path().apply {
+            if (first) moveTo(jx, jy) else moveTo(lastX, lastY)
+            lineTo(tx, ty)
+        }
+        val stroke = try {
+            if (first) GestureDescription.StrokeDescription(path, 0, 350, true)
+            else lastStroke!!.continueStroke(path, 0, 350, true)
+        } catch (e: Exception) { lastStroke = null; ui.postDelayed({ nextSegment() }, 150); return }
+        requestShot()
+        val ok = dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), object : GestureResultCallback() {
+            override fun onCompleted(g: GestureDescription?) {
+                lastStroke = stroke; lastX = tx; lastY = ty
+                ui.post { nextSegment() }
+            }
+            override fun onCancelled(g: GestureDescription?) {
+                lastStroke = null
+                ui.postDelayed({ nextSegment() }, 150)
+            }
+        }, null)
+        if (!ok) { lastStroke = null; ui.postDelayed({ nextSegment() }, 300) }
     }
 
     private fun toast(s: String) = ui.post { Toast.makeText(this, s, Toast.LENGTH_SHORT).show() }

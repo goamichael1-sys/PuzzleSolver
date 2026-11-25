@@ -16,7 +16,7 @@ class BubbleTile : TileService() {
     private fun refresh() {
         val on = getSharedPreferences("cfg", MODE_PRIVATE).getBoolean("bubble", false)
         qsTile?.apply {
-            label = "Penguin Solver"
+            label = getString(R.string.app_name)
             state = if (on) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             updateTile()
         }

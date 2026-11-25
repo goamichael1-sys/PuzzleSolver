@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="Penguin Solver"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
@@ -12,7 +13,7 @@
         <service
             android:name=".SolverService"
             android:exported="true"
-            android:label="Penguin Solver"
+            android:label="@string/app_name"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -25,7 +26,7 @@
             android:name=".BubbleTile"
             android:exported="true"
             android:icon="@drawable/ic_tile"
-            android:label="Penguin Solver"
+            android:label="@string/app_name"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

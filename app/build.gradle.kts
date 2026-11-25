@@ -18,4 +18,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    buildFeatures { buildConfig = true }
+    flavorDimensions += "game"
+    productFlavors {
+        create("penguin") {
+            dimension = "game"
+            applicationId = "com.felo.penguinsolver"
+            buildConfigField("boolean", "HOLE", "false")
+        }
+        create("hole") {
+            dimension = "game"
+            applicationId = "com.felo.holebot"
+            buildConfigField("boolean", "HOLE", "true")
+        }
+    }
 }

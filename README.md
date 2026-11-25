@@ -1,13 +1,18 @@
-# Penguin Solver
-Accessibility-service app that reads the penguin puzzle board from a screenshot, solves it, and taps the cells.
+# Penguin Solver + Hole Bot (two separate apps, one repo)
 
 ## Build with GitHub
-1. Create a new GitHub repo, upload everything in this folder (keep the .github folder).
-2. Open the Actions tab -> "Build APK" runs automatically (or Run workflow).
-3. When green, open Releases -> "Penguin Solver (latest)" -> download app-debug.apk.
+1. Create a GitHub repo, upload everything in this folder (keep the .github folder).
+2. Actions tab -> "Build APKs" runs automatically.
+3. Releases -> "Latest APKs": download **PenguinSolver.apk** (grid puzzle) and **HoleBot.apk** (hole game).
 
-## Use
-1. Install APK, open it, tap "Open Accessibility settings", enable Penguin Solver.
-2. Turn ON "Show SOLVE bubble" in the app (or use the Quick Settings tile). It is OFF by default. Open the game on a level, tap the blue SOLVE bubble (drag it; long-press hides it).
-3. Default is 2 taps per penguin cell (X then penguin). Change "Taps per cell" in the app if needed.
-Works on any square grid size (tested 4x4 to 12x12). Needs Android 11+.
+## Use (both apps)
+1. Open the app -> "Open Accessibility settings" -> enable it.
+2. Turn ON "Show bubble on screen" (or add the app's Quick Settings tile). Long-press the bubble to hide it.
+3. Penguin Solver: open a level, tap SOLVE (2 taps per penguin by default; works on any square grid).
+4. Hole Bot: open the game, tap START BOT / STOP BOT. If it grabs the wrong spot for the joystick, change "joystick height".
+Needs Android 11+.
+
+## Hole Bot notes
+- Keeps one finger down on the joystick and re-aims ~3x per second, dragging the hole toward the nearest item.
+- Reads the goal bar at the top and only chases item types still needed (hearts, shoes, lipstick/polish).
+- Ignores water, the "Lv.N" / "POWER" labels and tutorial bubbles.

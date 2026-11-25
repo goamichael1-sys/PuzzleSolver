@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APKs
 on:
   push:
     branches: [main, master]
@@ -19,16 +19,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Build both apps
+        run: gradle assemblePenguinDebug assembleHoleDebug --no-daemon
+      - name: Collect APKs
+        run: |
+          mkdir out
+          cp app/build/outputs/apk/penguin/debug/app-penguin-debug.apk out/PenguinSolver.apk
+          cp app/build/outputs/apk/hole/debug/app-hole-debug.apk out/HoleBot.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: PenguinSolver-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: apks
+          path: out/*.apk
       - name: Publish as "latest" release (easy phone download)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest app/build/outputs/apk/debug/app-debug.apk \
-            --title "Penguin Solver (latest)" --notes "Auto-built APK"
+          gh release create latest out/PenguinSolver.apk out/HoleBot.apk \
+            --title "Latest APKs" --notes "PenguinSolver.apk = grid puzzle, HoleBot.apk = hole game"
